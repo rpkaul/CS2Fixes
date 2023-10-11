@@ -18,7 +18,7 @@
  */
 
 #include "common.h"
-#include "keyvalues.h"
+#include "KeyValues.h"
 #include "commands.h"
 #include "ctimer.h"
 #include "eventlistener.h"
@@ -27,6 +27,7 @@
 #include "tier0/memdbgon.h"
 
 extern IGameEventManager2 *g_gameEventManager;
+extern IServerGameClients *g_pSource2GameClients;
 
 CUtlVector<CGameEventListener *> g_vecEventListeners;
 
@@ -48,6 +49,12 @@ void UnregisterEventListeners()
 	g_vecEventListeners.Purge();
 }
 
+GAME_EVENT_F(player_team)
+{
+	// Remove chat message for team changes
+	pEvent->SetBool("silent", true);
+}
+
 GAME_EVENT_F(player_spawn)
 {
 	CBasePlayerController *pController = (CBasePlayerController*)pEvent->GetPlayerController("userid");
@@ -67,7 +74,8 @@ GAME_EVENT_F(player_spawn)
 
 		CBasePlayerPawn *pPawn = pController->GetPawn();
 
-		if (!pPawn)
+		// Just in case somehow there's health but the player is, say, an observer
+		if (!pPawn || pPawn->m_iHealth() <= 0 || !g_pSource2GameClients->IsPlayerAlive(pController->GetPlayerSlot()))
 			return;
 
 		pPawn->m_pCollision->m_collisionAttribute().m_nCollisionGroup = COLLISION_GROUP_DEBRIS;
