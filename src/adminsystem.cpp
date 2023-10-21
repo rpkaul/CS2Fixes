@@ -30,7 +30,7 @@
 extern IVEngineServer2 *g_pEngineServer2;
 extern CEntitySystem *g_pEntitySystem;
 
-CAdminSystem* g_pAdminSystem;
+CAdminSystem* g_pAdminSystem = nullptr;
 
 CUtlMap<uint32, FnChatCommandCallback_t> g_CommandList(0, 0, DefLessFunc(uint32));
 
@@ -655,6 +655,112 @@ CON_COMMAND_CHAT(bring, "bring a player")
 	}
 }
 
+CON_COMMAND_CHAT(setteam, "set a player's team")
+{
+	if (!player)
+		return;
+
+	int iCommandPlayer = player->GetPlayerSlot();
+
+	ZEPlayer *pPlayer = g_playerManager->GetPlayer(player->GetPlayerSlot());
+
+	if (!pPlayer->IsAdminFlagSet(ADMFLAG_SLAY))
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You don't have access to this command.");
+		return;
+	}
+
+	if (args.ArgC() < 3)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !setteam <name> <team (0-3)>");
+		return;
+	}
+
+	int iNumClients = 0;
+	int pSlots[MAXPLAYERS];
+
+	ETargetType nType = g_playerManager->TargetPlayerString(iCommandPlayer, args[1], iNumClients, pSlots);
+
+	if (!iNumClients)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Target not found.");
+		return;
+	}
+
+	int iTeam = V_StringToInt32(args[2], -1);
+
+	if (iTeam < CS_TEAM_NONE || iTeam > CS_TEAM_CT)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Invalid team specified, range is 0-3.");
+		return;
+	}
+
+	for (int i = 0; i < iNumClients; i++)
+	{
+		CBasePlayerController *pTarget = (CBasePlayerController *)g_pEntitySystem->GetBaseEntity((CEntityIndex)(pSlots[i] + 1));
+
+		if (!pTarget)
+			continue;
+
+		pTarget->m_iTeamNum = iTeam;
+		pTarget->GetPawn()->m_iTeamNum = iTeam;
+
+		if (nType < ETargetType::ALL)
+			ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "moved %s to team %i.", player->GetPlayerName(), pTarget->GetPlayerName(), iTeam);
+	}
+
+	switch (nType)
+	{
+	case ETargetType::ALL:
+		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "moved everyone to team %i.", iTeam);
+		break;
+	case ETargetType::T:
+		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "moved terrorists to team %i.", iTeam);
+		break;
+	case ETargetType::CT:
+		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "moved counter-terrorists to team %i.", iTeam);
+		break;
+	}
+}
+
+CON_COMMAND_CHAT(noclip, "toggle noclip on yourself")
+{
+	if (!player)
+		return;
+
+	int iCommandPlayer = player->GetPlayerSlot();
+
+	ZEPlayer *pPlayer = g_playerManager->GetPlayer(iCommandPlayer);
+	
+	if (!pPlayer->IsAdminFlagSet(ADMFLAG_SLAY))
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You don't have access to this command.");
+		return;
+	}
+
+	CBasePlayerPawn *pPawn = player->m_hPawn();
+
+	if (!pPawn)
+		return;
+
+	if (pPawn->m_iHealth() <= 0)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You cannot noclip while dead!");
+		return;
+	}
+
+	if (pPawn->m_MoveType() == MOVETYPE_NOCLIP)
+	{
+		pPawn->m_MoveType = MOVETYPE_WALK;
+		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "exited noclip.", player->GetPlayerName());
+	}
+	else
+	{
+		pPawn->m_MoveType = MOVETYPE_NOCLIP;
+		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "entered noclip.", player->GetPlayerName());
+	}
+}
+
 CON_COMMAND_CHAT(map, "change map")
 {
 	if (!player)
@@ -715,6 +821,30 @@ CON_COMMAND_CHAT(hsay, "say something as a hud hint")
 	}
 
 	ClientPrintAll(HUD_PRINTCENTER, "%s", args.ArgS());
+}
+
+CON_COMMAND_CHAT(rcon, "send a command to server console")
+{
+	if (!player)
+		return;
+
+	int iCommandPlayer = player->GetPlayerSlot();
+
+	ZEPlayer* pPlayer = g_playerManager->GetPlayer(iCommandPlayer);
+
+	if (!pPlayer->IsAdminFlagSet(ADMFLAG_RCON))
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You don't have access to this command.");
+		return;
+	}
+
+	if (args.ArgC() < 2)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !rcon <command>");
+		return;
+	}
+
+	g_pEngineServer2->ServerCommand(args.ArgS());
 }
 
 bool CAdminSystem::LoadAdmins()
@@ -778,7 +908,7 @@ bool CAdminSystem::LoadInfractions()
 	for (KeyValues* pKey = pKV->GetFirstSubKey(); pKey; pKey = pKey->GetNextKey())
 	{
 		uint64 iSteamId = pKey->GetUint64("steamid", -1);
-		int iEndTime = pKey->GetInt("endtime", -1);
+		time_t iEndTime = pKey->GetUint64("endtime", -1);
 		int iType = pKey->GetInt("type", -1);
 
 		if (iSteamId == -1)
@@ -802,13 +932,13 @@ bool CAdminSystem::LoadInfractions()
 		switch (iType)
 		{
 		case CInfractionBase::Ban:
-			AddInfraction(new CBanInfraction(iEndTime, iSteamId));
+			AddInfraction(new CBanInfraction(iEndTime, iSteamId, true));
 			break;
 		case CInfractionBase::Mute:
-			AddInfraction(new CMuteInfraction(iEndTime, iSteamId));
+			AddInfraction(new CMuteInfraction(iEndTime, iSteamId, true));
 			break;
 		case CInfractionBase::Gag:
-			AddInfraction(new CGagInfraction(iEndTime, iSteamId));
+			AddInfraction(new CGagInfraction(iEndTime, iSteamId, true));
 			break;
 		default:
 			Warning("Invalid infraction type %d\n", iType);
@@ -826,7 +956,7 @@ void CAdminSystem::SaveInfractions()
 
 	FOR_EACH_VEC(m_vecInfractions, i)
 	{
-		int timestamp = m_vecInfractions[i]->GetTimestamp();
+		time_t timestamp = m_vecInfractions[i]->GetTimestamp();
 		if (timestamp != 0 && timestamp < std::time(0))
 			continue;
 
@@ -834,7 +964,7 @@ void CAdminSystem::SaveInfractions()
 		V_snprintf(buf, sizeof(buf), "%d", i);
 		pSubKey = new KeyValues(buf);
 		pSubKey->AddUint64("steamid", m_vecInfractions[i]->GetSteamId64());
-		pSubKey->AddInt("endtime", m_vecInfractions[i]->GetTimestamp());
+		pSubKey->AddUint64("endtime", m_vecInfractions[i]->GetTimestamp());
 		pSubKey->AddInt("type", m_vecInfractions[i]->GetType());
 
 		pKV->AddSubKey(pSubKey);
@@ -851,24 +981,41 @@ void CAdminSystem::AddInfraction(CInfractionBase* infraction)
 	m_vecInfractions.AddToTail(infraction);
 }
 
-void CAdminSystem::ApplyInfractions(ZEPlayer *player)
+
+// This function can run at least twice when a player connects: Immediately upon client connection, and also upon getting authenticated by steam.
+// It's also run when we're periodically checking for infraction expiry in the case of mutes/gags.
+// This returns false only when called from ClientConnect and the player is banned in order to reject them.
+bool CAdminSystem::ApplyInfractions(ZEPlayer *player)
 {
 	FOR_EACH_VEC(m_vecInfractions, i)
 	{
-		// Undo the infraction just briefly while checking if it ran out
-		if (m_vecInfractions[i]->GetSteamId64() == player->GetSteamId64())
-			m_vecInfractions[i]->UndoInfraction(player);
+		// Because this can run without the player being authenticated, and the fact that we're applying a ban/mute here,
+		// we can immediately just use the steamid we got from the connecting player.
+		uint64 iSteamID = player->IsAuthenticated() ? 
+			player->GetSteamId64() : g_pEngineServer2->GetClientSteamID(player->GetPlayerSlot())->ConvertToUint64();
 
-		int timestamp = m_vecInfractions[i]->GetTimestamp();
+		// We're only interested in infractions concerning this player
+		if (m_vecInfractions[i]->GetSteamId64() != iSteamID)
+			continue;
+
+		// Undo the infraction just briefly while checking if it ran out
+		m_vecInfractions[i]->UndoInfraction(player);
+
+		time_t timestamp = m_vecInfractions[i]->GetTimestamp();
 		if (timestamp != 0 && timestamp <= std::time(0))
 		{
 			m_vecInfractions.Remove(i);
 			continue;
 		}
 
-		if (m_vecInfractions[i]->GetSteamId64() == player->GetSteamId64())
-			m_vecInfractions[i]->ApplyInfraction(player);
+		// We are called from ClientConnect and the player is banned, immediately reject them
+		if (!player->IsConnected() && m_vecInfractions[i]->GetType() == CInfractionBase::EInfractionType::Ban)
+			return false;
+		
+		m_vecInfractions[i]->ApplyInfraction(player);
 	}
+
+	return true;
 }
 
 bool CAdminSystem::FindAndRemoveInfraction(ZEPlayer *player, CInfractionBase::EInfractionType type)
@@ -920,7 +1067,7 @@ uint64 CAdminSystem::ParseFlags(const char* pszFlags)
 
 void CBanInfraction::ApplyInfraction(ZEPlayer *player)
 {
-	g_pEngineServer2->DisconnectClient(player->GetPlayerSlot().Get(), NETWORK_DISCONNECT_REJECT_BANNED); // "Kicked and banned"
+	g_pEngineServer2->DisconnectClient(player->GetPlayerSlot(), NETWORK_DISCONNECT_KICKBANADDED); // "Kicked and banned"
 }
 
 void CMuteInfraction::ApplyInfraction(ZEPlayer* player)

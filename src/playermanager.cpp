@@ -17,11 +17,13 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <../cs2fixes.h>
 #include "utlstring.h"
 #include "playermanager.h"
 #include "adminsystem.h"
 #include "entity/ccsplayercontroller.h"
 #include "ctime"
+
 
 extern IVEngineServer2 *g_pEngineServer2;
 extern CEntitySystem *g_pEntitySystem;
@@ -62,20 +64,42 @@ bool ZEPlayer::IsAdminFlagSet(uint64 iFlag)
 void CPlayerManager::OnBotConnected(CPlayerSlot slot)
 {
 	m_vecPlayers[slot.Get()] = new ZEPlayer(slot, true);
+	m_UserIdLookup[g_pEngineServer2->GetPlayerUserId(slot).Get()] = slot.Get();
 }
 
-void CPlayerManager::OnClientConnected(CPlayerSlot slot)
+bool CPlayerManager::OnClientConnected(CPlayerSlot slot)
 {
 	Assert(m_vecPlayers[slot.Get()] == nullptr);
 
 	Message("%d connected\n", slot.Get());
-	m_vecPlayers[slot.Get()] = new ZEPlayer(slot);
+
+	ZEPlayer *pPlayer = new ZEPlayer(slot);
+
+	if (!g_pAdminSystem->ApplyInfractions(pPlayer))
+	{
+		// Player is banned
+		delete pPlayer;
+		return false;
+	}
+
+	pPlayer->SetConnected();
+	m_vecPlayers[slot.Get()] = pPlayer;
+	m_UserIdLookup[g_pEngineServer2->GetPlayerUserId(slot).Get()] = slot.Get();
+
+	ResetPlayerFlags(slot.Get());
+	
+	return true;
 }
 
 void CPlayerManager::OnClientDisconnect(CPlayerSlot slot)
 {
 	Message("%d disconnected\n", slot.Get());
+
+	delete m_vecPlayers[slot.Get()];
 	m_vecPlayers[slot.Get()] = nullptr;
+	m_UserIdLookup[g_pEngineServer2->GetPlayerUserId(slot).Get()] = -1;
+
+	ResetPlayerFlags(slot.Get());
 }
 
 void CPlayerManager::TryAuthenticate()
@@ -106,6 +130,59 @@ void CPlayerManager::CheckInfractions()
 			continue;
 
 		m_vecPlayers[i]->CheckInfractions();
+	}
+
+	g_pAdminSystem->SaveInfractions();
+}
+
+void CPlayerManager::CheckHideDistances()
+{
+	if (!g_pEntitySystem)
+		return;
+
+	for (int i = 0; i < MAXPLAYERS; i++)
+	{
+		auto player = GetPlayer(i);
+
+		if (!player)
+			continue;
+
+		player->ClearTransmit();
+		auto hideDistance = player->GetHideDistance();
+
+		if (!hideDistance)
+			continue;
+
+		auto pController = (CCSPlayerController *)g_pEntitySystem->GetBaseEntity((CEntityIndex)(i + 1));
+
+		if (!pController)
+			continue;
+
+		auto pPawn = pController->GetPawn();
+
+		if (!pPawn || !pPawn->IsAlive())
+			continue;
+
+		auto vecPosition = pPawn->GetAbsOrigin();
+		int team = pController->m_iTeamNum;
+
+		for (int j = 1; j < MAXPLAYERS + 1; j++)
+		{
+			if (j - 1 == i)
+				continue;
+
+			auto pTargetController = (CCSPlayerController *)g_pEntitySystem->GetBaseEntity((CEntityIndex)j);
+
+			if (pTargetController)
+			{
+				auto pTargetPawn = pTargetController->GetPawn();
+
+				if (pTargetPawn && pTargetPawn->IsAlive() && pTargetController->m_iTeamNum == team)
+				{
+					player->SetTransmit(j - 1, pTargetPawn->GetAbsOrigin().DistToSqr(vecPosition) <= hideDistance * hideDistance);
+				}
+			}
+		}
 	}
 }
 
@@ -184,6 +261,16 @@ ETargetType CPlayerManager::TargetPlayerString(int iCommandClient, const char* t
 			clients[iNumClients++] = slot;
 		}
 	}
+	else if (*target == '#')
+	{
+		int userid = V_StringToUint16(target + 1, -1);
+
+		if (userid != -1)
+		{
+			targetType = ETargetType::PLAYER;
+			clients[iNumClients++] = GetSlotFromUserId(userid).Get();
+		}
+	}
 	else
 	{
 		for (int i = 0; i < sizeof(m_vecPlayers) / sizeof(*m_vecPlayers); i++)
@@ -200,9 +287,54 @@ ETargetType CPlayerManager::TargetPlayerString(int iCommandClient, const char* t
 			{
 				targetType = ETargetType::PLAYER;
 				clients[iNumClients++] = i;
+				break;
 			}
 		}
 	}
 
 	return targetType;
+}
+
+CPlayerSlot CPlayerManager::GetSlotFromUserId(int userid)
+{
+	return m_UserIdLookup[userid];
+}
+
+ZEPlayer *CPlayerManager::GetPlayerFromUserId(int userid)
+{
+	if (m_UserIdLookup[userid] == -1)
+		return nullptr;
+
+	return m_vecPlayers[m_UserIdLookup[userid]];
+}
+
+void CPlayerManager::SetPlayerStopSound(int slot, bool set)
+{
+	if (set)
+		m_nUsingStopSound |= ((uint64)1 << slot);
+	else
+		m_nUsingStopSound &= ~((uint64)1 << slot);
+}
+
+void CPlayerManager::SetPlayerSilenceSound(int slot, bool set)
+{
+	if (set)
+		m_nUsingSilenceSound |= ((uint64)1 << slot);
+	else
+		m_nUsingSilenceSound &= ~((uint64)1 << slot);
+}
+
+void CPlayerManager::SetPlayerStopDecals(int slot, bool set)
+{
+	if (set)
+		m_nUsingStopDecals |= ((uint64)1 << slot);
+	else
+		m_nUsingStopDecals &= ~((uint64)1 << slot);
+}
+
+void CPlayerManager::ResetPlayerFlags(int slot)
+{
+	SetPlayerStopSound(slot, false);
+	SetPlayerSilenceSound(slot, true);
+	SetPlayerStopDecals(slot, true);
 }
