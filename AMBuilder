@@ -26,6 +26,7 @@ for sdk_name in MMSPlugin.sdks:
       os.path.join(builder.sourcePath, 'vendor', 'subhook'),
       os.path.join(builder.sourcePath, 'vendor', 'funchook', 'include'),
       os.path.join(builder.sourcePath, 'vendor', 'protobuf-3.21.8', 'src'),
+      os.path.join(builder.sourcePath, 'protobuf', 'generated'),
     ]
 
     if binary.compiler.target.platform == 'linux':
@@ -58,12 +59,12 @@ for sdk_name in MMSPlugin.sdks:
       'src/events.cpp',
       'src/utils/entity.cpp',
       'src/cs2_sdk/schema.cpp',
-      'src/cs2_sdk/interfaces/cs2_interfaces.cpp',
       'src/ctimer.cpp',
       'src/playermanager.cpp',
       'src/gameconfig.cpp',
       'src/votemanager.cpp',
       'src/httpmanager.cpp',
+      'src/discord.cpp',
     ]
 
     if sdk_name in ['dota', 'cs2']:

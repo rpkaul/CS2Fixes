@@ -21,6 +21,7 @@
 #include "entity/ccsplayercontroller.h"
 #include "convar.h"
 #include "adminsystem.h"
+#include <vector>
 
 #define COMMAND_PREFIX "c_"
 #define CHAT_PREFIX	" \7[CS2Fixes]\1 "
@@ -30,6 +31,9 @@ typedef void (*FnChatCommandCallback_t)(const CCommand &args, CCSPlayerControlle
 class CChatCommand;
 
 extern CUtlMap<uint32, CChatCommand*> g_CommandList;
+
+extern bool g_bEnableHide;
+extern bool g_bEnableStopSound;
 
 void ClientPrintAll(int destination, const char *msg, ...);
 void ClientPrint(CBasePlayerController *player, int destination, const char *msg, ...);
@@ -66,13 +70,16 @@ private:
 
 struct WeaponMapEntry_t
 {
-	const char *command;
-	const char *szWeaponName;
+	std::vector<std::string> aliases;
+	const char* szClassName;
+	const char* szWeaponName;
 	int iPrice;
 	uint16 iItemDefIndex;
+	gear_slot_t iGearSlot;
 	int maxAmount = 0;
 };
 
+void RegisterWeaponCommands();
 void ParseChatCommand(const char *, CCSPlayerController *);
 
 #define CON_COMMAND_CHAT_FLAGS(name, description, flags)																								\

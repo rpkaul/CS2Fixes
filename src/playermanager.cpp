@@ -67,6 +67,62 @@ bool ZEPlayer::IsAdminFlagSet(uint64 iFlag)
 	return !iFlag || (m_iAdminFlags & iFlag);
 }
 
+// CONVAR_TODO
+static float g_flFloodInterval = 0.75;
+static int g_iMaxFloodTokens = 3;
+static float g_flFloodCooldown = 3.0;
+
+CON_COMMAND_F(cs2f_flood_interval, "Amount of time allowed between chat messages acquiring flood tokens", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 2)
+		Msg("%s %.2f\n", args[0], g_flFloodInterval);
+	else
+		g_flFloodInterval = V_StringToFloat32(args[1], 0.75f);
+}
+CON_COMMAND_F(cs2f_max_flood_tokens, "Maximum number of flood tokens allowed before chat messages are blocked", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 2)
+		Msg("%s %i\n", args[0], g_iMaxFloodTokens);
+	else
+		g_iMaxFloodTokens = V_StringToInt32(args[1], 3);
+}
+CON_COMMAND_F(cs2f_flood_cooldown, "Amount of time to block messages for when a player floods", FCVAR_SPONLY | FCVAR_LINKED_CONCOMMAND)
+{
+	if (args.ArgC() < 2)
+		Msg("%s %.2f\n", args[0], g_flFloodCooldown);
+	else
+		g_flFloodCooldown = V_StringToFloat32(args[1], 3.0f);
+}
+
+bool ZEPlayer::IsFlooding()
+{
+	if (m_bGagged) return false;
+
+	float time = gpGlobals->curtime;
+	float newTime = time + g_flFloodInterval;
+
+	if (m_flLastTalkTime >= time)
+	{
+		if (m_iFloodTokens >= g_iMaxFloodTokens)
+		{
+			m_flLastTalkTime = newTime + g_flFloodCooldown;
+			return true;
+		}
+		else
+		{
+			m_iFloodTokens++;
+		}
+	}
+	else if(m_iFloodTokens > 0)
+	{
+		// Remove one flood token when player chats within time limit (slow decay)
+		m_iFloodTokens--;
+	}
+
+	m_flLastTalkTime = newTime;
+	return false;
+}
+
 void CPlayerManager::OnBotConnected(CPlayerSlot slot)
 {
 	m_vecPlayers[slot.Get()] = new ZEPlayer(slot, true);
@@ -122,7 +178,7 @@ void CPlayerManager::TryAuthenticate()
 {
 	for (int i = 0; i < gpGlobals->maxClients; i++)
 	{
-		if (m_vecPlayers[i] == nullptr)
+		if (m_vecPlayers[i] == nullptr || !m_vecPlayers[i]->IsConnected())
 			continue;
 
 		if (m_vecPlayers[i]->IsAuthenticated() || m_vecPlayers[i]->IsFakeClient())
@@ -149,6 +205,17 @@ void CPlayerManager::CheckInfractions()
 	}
 
 	g_pAdminSystem->SaveInfractions();
+}
+
+// CONVAR_TODO
+static bool g_bHideTeammatesOnly = false;
+
+CON_COMMAND_F(cs2f_hide_teammates_only, "Whether to hide teammates only", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY)
+{
+	if (args.ArgC() < 2)
+		Msg("%s %i\n", args[0], g_bHideTeammatesOnly);
+	else
+		g_bHideTeammatesOnly = V_StringToBool(args[1], false);
 }
 
 void CPlayerManager::CheckHideDistances()
@@ -195,7 +262,7 @@ void CPlayerManager::CheckHideDistances()
 			{
 				auto pTargetPawn = pTargetController->GetPawn();
 
-				if (pTargetPawn && pTargetPawn->IsAlive() && pTargetController->m_iTeamNum == team)
+				if (pTargetPawn && pTargetPawn->IsAlive() && (!g_bHideTeammatesOnly || pTargetController->m_iTeamNum == team))
 				{
 					player->SetTransmit(j, pTargetPawn->GetAbsOrigin().DistToSqr(vecPosition) <= hideDistance * hideDistance);
 				}
@@ -337,6 +404,17 @@ ZEPlayer *CPlayerManager::GetPlayerFromUserId(uint16 userid)
 		return nullptr;
 
 	return m_vecPlayers[index];
+}
+
+ZEPlayer* CPlayerManager::GetPlayerFromSteamId(uint64 steamid)
+{
+	for (ZEPlayer* player : m_vecPlayers)
+	{
+		if (player && player->IsAuthenticated() && player->GetSteamId64() == steamid)
+			return player;
+	}
+
+	return nullptr;
 }
 
 void CPlayerManager::SetPlayerStopSound(int slot, bool set)

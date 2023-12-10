@@ -27,6 +27,7 @@
 #include "commands.h"
 #include "ctimer.h"
 #include "detours.h"
+#include "discord.h"
 #include "utils/entity.h"
 #include "entity/cgamerules.h"
 
@@ -697,6 +698,12 @@ CON_COMMAND_CHAT_FLAGS(noclip, "toggle noclip on yourself", ADMFLAG_SLAY | ADMFL
 	}
 }
 
+CON_COMMAND_CHAT_FLAGS(reload_discord_bots, "Reload discord bot config", ADMFLAG_ROOT)
+{
+	g_pDiscordBotManager->LoadDiscordBotsConfig();
+	Message("Discord bot config reloaded\n");
+}
+
 CON_COMMAND_CHAT_FLAGS(entfire, "fire outputs at entities", ADMFLAG_RCON)
 {
 	if (args.ArgC() < 3)
@@ -844,14 +851,27 @@ CON_COMMAND_CHAT_FLAGS(map, "change map", ADMFLAG_CHANGEMAP)
 		return;
 	}
 
-	char szMapName[MAX_PATH];
-	V_strncpy(szMapName, args[1], sizeof(szMapName));
-
-	if (!g_pEngineServer2->IsMapValid(szMapName))
+	if (!g_pEngineServer2->IsMapValid(args[1]))
 	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"Invalid map specified.");
+		// This might be a workshop map, and right now there's no easy way to get the list from a collection
+		// So blindly attempt the change for now, as the command does nothing if the map isn't found
+		std::string sCommand = "ds_workshop_changelevel " + std::string(args[1]);
+
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Attempting a map change to %s from the workshop collection...", args[1]);
+		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX "Changing map to %s...", args[1]);
+
+		new CTimer(5.0f, false, [sCommand]()
+		{
+			g_pEngineServer2->ServerCommand(sCommand.c_str());
+			return -1.0f;
+		});
+
 		return;
 	}
+
+	// Copy the string, since we're passing this into a timer
+	char szMapName[MAX_PATH];
+	V_strncpy(szMapName, args[1], sizeof(szMapName));
 
 	ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX "Changing map to %s...", szMapName);
 
@@ -892,7 +912,7 @@ CON_COMMAND_CHAT_FLAGS(rcon, "send a command to server console", ADMFLAG_RCON)
 
 CON_COMMAND_CHAT_FLAGS(extend, "extend current map (negative value reduces map duration)", ADMFLAG_CHANGEMAP)
 {
-	if (args.ArgC() < 3)
+	if (args.ArgC() < 2)
 	{
 		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !extend <minutes>");
 		return;
@@ -900,11 +920,11 @@ CON_COMMAND_CHAT_FLAGS(extend, "extend current map (negative value reduces map d
 
 	int iExtendTime = V_StringToInt32(args[1], 0);
 
-	// CONVAR_TODO
 	ConVar* cvar = g_pCVar->GetConVar(g_pCVar->FindConVar("mp_timelimit"));
 
-	float flTimelimit;
-	memcpy(&flTimelimit, &cvar->values, sizeof(flTimelimit));
+	// CONVAR_TODO
+	// HACK: values is actually the cvar value itself, hence this ugly cast.
+	float flTimelimit = *(float *)&cvar->values;
 
 	if (gpGlobals->curtime - g_pGameRules->m_flGameStartTime > flTimelimit * 60)
 		flTimelimit = (gpGlobals->curtime - g_pGameRules->m_flGameStartTime) / 60.0f + iExtendTime;
@@ -918,11 +938,17 @@ CON_COMMAND_CHAT_FLAGS(extend, "extend current map (negative value reduces map d
 	if (flTimelimit <= 0)
 		flTimelimit = 1;
 
+	// CONVAR_TODO
 	char buf[32];
 	V_snprintf(buf, sizeof(buf), "mp_timelimit %.6f", flTimelimit);
-
-	// CONVAR_TODO
 	g_pEngineServer2->ServerCommand(buf);
+
+	const char* pszCommandPlayerName = player ? player->GetPlayerName() : "Console";
+
+	if (iExtendTime < 0)
+		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "shortened map time %i minutes.", pszCommandPlayerName, iExtendTime * -1);
+	else
+		ClientPrintAll(HUD_PRINTTALK, CHAT_PREFIX ADMIN_PREFIX "extended map time %i minutes.", pszCommandPlayerName, iExtendTime);
 }
 
 bool CAdminSystem::LoadAdmins()

@@ -28,114 +28,212 @@
 #include "entity/ccsplayercontroller.h"
 #include "entity/ccsplayerpawn.h"
 #include "entity/cbasemodelentity.h"
+#include "entity/ccsweaponbase.h"
 #include "playermanager.h"
 #include "adminsystem.h"
 #include "ctimer.h"
 #include "httpmanager.h"
+#include "discord.h"
+#undef snprintf
+#include "vendor/nlohmann/json.hpp"
 
 #include "tier0/memdbgon.h"
+
+using json = nlohmann::json;
 
 extern CEntitySystem *g_pEntitySystem;
 extern IVEngineServer2* g_pEngineServer2;
 extern ISteamHTTP* g_http;
 
 WeaponMapEntry_t WeaponMap[] = {
-	{"bizon",		  "weapon_bizon",			 1400, 26},
-	{"mac10",		  "weapon_mac10",			 1400, 27},
-	{"mp7",			"weapon_mp7",				 1700, 23},
-	{"mp9",			"weapon_mp9",				 1250, 34},
-	{"p90",			"weapon_p90",				 2350, 19},
-	{"ump45",		  "weapon_ump45",			 1700, 24},
-	{"ak47",			 "weapon_ak47",			 2500, 7},
-	{"aug",			"weapon_aug",				 3500, 8},
-	{"famas",		  "weapon_famas",			 2250, 10},
-	{"galilar",		"weapon_galilar",			 2000, 13},
-	{"m4a4",			 "weapon_m4a1",			 3100, 16},
-	{"m4a1",			 "weapon_m4a1_silencer", 3100, 60},
-	{"sg556",		  "weapon_sg556",			 3500, 39},
-	{"awp",			"weapon_awp",				 4750, 9},
-	{"g3sg1",		  "weapon_g3sg1",			 5000, 11},
-	{"scar20",		   "weapon_scar20",			 5000, 38},
-	{"ssg08",		  "weapon_ssg08",			 2500, 40},
-	{"mag7",			 "weapon_mag7",			 2000, 29},
-	{"nova",			 "weapon_nova",			 1500, 35},
-	{"sawedoff",		 "weapon_sawedoff",		 1500, 29},
-	{"xm1014",		   "weapon_xm1014",			 3000, 25},
-	{"m249",			 "weapon_m249",			 5750, 14},
-	{"negev",		  "weapon_negev",			 5750, 28},
-	{"deagle",		   "weapon_deagle",			 700 , 1},
-	{"elite",		  "weapon_elite",			 800 , 2},
-	{"fiveseven",	  "weapon_fiveseven",		 500 , 3},
-	{"glock",		  "weapon_glock",			 200 , 4},
-	{"hkp2000",		"weapon_hkp2000",			 200 , 32},
-	{"p250",			 "weapon_p250",			 300 , 36},
-	{"tec9",			 "weapon_tec9",			 500 , 30},
-	{"usp_silencer",	 "weapon_usp_silencer",	 200 , 61},
-	{"cz75a",		  "weapon_cz75a",			 500 , 63},
-	{"revolver",		 "weapon_revolver",		 600 , 64},
-	{"he",			"weapon_hegrenade",			 300 , 44, 1},
-	{"molotov",		"weapon_molotov",			 850 , 46, 1},
-	{"knife",		"weapon_knife",				 0	 , 42},	// default CT knife
-	{"kevlar",		   "item_kevlar",			 600 , 50},
+	{{"bizon"},							"weapon_bizon",			"PP-Bizon",			1400, 26, GEAR_SLOT_RIFLE},
+	{{"mac10", "mac"},					"weapon_mac10",			"MAC-10",			1050, 27, GEAR_SLOT_RIFLE},
+	{{"mp5sd", "mp5"},					"weapon_mp5sd",			"MP5-SD",			1500, 23, GEAR_SLOT_RIFLE},
+	{{"mp7"},							"weapon_mp7",			"MP7",				1500, 23, GEAR_SLOT_RIFLE},
+	{{"mp9"},							"weapon_mp9",			"MP9",				1250, 34, GEAR_SLOT_RIFLE},
+	{{"p90"},							"weapon_p90",			"P90",				2350, 19, GEAR_SLOT_RIFLE},
+	{{"ump45", "ump"},					"weapon_ump45",			"UMP-45",			1200, 24, GEAR_SLOT_RIFLE},
+	{{"ak47", "ak"},					"weapon_ak47",			"AK-47",			2700, 7, GEAR_SLOT_RIFLE},
+	{{"aug"},							"weapon_aug",			"AUG",				3300, 8, GEAR_SLOT_RIFLE},
+	{{"famas"},							"weapon_famas",			"FAMAS",			2050, 10, GEAR_SLOT_RIFLE},
+	{{"galilar", "galil"},				"weapon_galilar",		"Galil AR",			1800, 13, GEAR_SLOT_RIFLE},
+	{{"m4a4"},							"weapon_m4a1",			"M4A4",				3100, 16, GEAR_SLOT_RIFLE},
+	{{"m4a1-s", "m4a1"},				"weapon_m4a1_silencer",	"M4A1-S",			2900, 60, GEAR_SLOT_RIFLE},
+	{{"sg553"},							"weapon_sg556",			"SG 553",			3000, 39, GEAR_SLOT_RIFLE},
+	{{"awp"},							"weapon_awp",			"AWP",				4750, 9, GEAR_SLOT_RIFLE},
+	{{"g3sg1"},							"weapon_g3sg1",			"G3SG1",			5000, 11, GEAR_SLOT_RIFLE},
+	{{"scar20", "scar"},				"weapon_scar20",		"SCAR-20",			5000, 38, GEAR_SLOT_RIFLE},
+	{{"ssg08", "ssg"},					"weapon_ssg08",			"SSG 08",			1700, 40, GEAR_SLOT_RIFLE},
+	{{"mag7", "mag"},					"weapon_mag7",			"MAG-7",			1300, 29, GEAR_SLOT_RIFLE},
+	{{"nova"},							"weapon_nova",			"Nova",				1050, 35, GEAR_SLOT_RIFLE},
+	{{"sawedoff"},						"weapon_sawedoff",		"Sawed-Off",		1100, 29, GEAR_SLOT_RIFLE},
+	{{"xm1014", "xm"},					"weapon_xm1014",		"XM1014",			2000, 25, GEAR_SLOT_RIFLE},
+	{{"m249"},							"weapon_m249",			"M249",				5200, 14, GEAR_SLOT_RIFLE},
+	{{"negev"},							"weapon_negev",			"Negev",			1700, 28, GEAR_SLOT_RIFLE},
+	{{"deagle"},						"weapon_deagle",		"Desert Eagle",		700, 1, GEAR_SLOT_PISTOL},
+	{{"dualberettas", "elite"},			"weapon_elite",			"Dual Berettas",	300, 2, GEAR_SLOT_PISTOL},
+	{{"fiveseven"},						"weapon_fiveseven",		"Five-SeveN",		500, 3, GEAR_SLOT_PISTOL},
+	{{"glock18", "glock"},				"weapon_glock",			"Glock-18",			200, 4, GEAR_SLOT_PISTOL},
+	{{"p2000"},							"weapon_hkp2000",		"P2000",			200, 32, GEAR_SLOT_PISTOL},
+	{{"p250"},							"weapon_p250",			"P250",				300, 36, GEAR_SLOT_PISTOL},
+	{{"tec9"},							"weapon_tec9",			"Tec-9",			500, 30, GEAR_SLOT_PISTOL},
+	{{"usp-s", "usp"},					"weapon_usp_silencer",	"USP-S",			200, 61, GEAR_SLOT_PISTOL},
+	{{"cz75-auto", "cs75a", "cz"},		"weapon_cz75a",			"CZ75-Auto",		500, 63, GEAR_SLOT_PISTOL},
+	{{"r8revolver", "revolver", "r8"},	"weapon_revolver",		"R8 Revolver",		600, 64, GEAR_SLOT_PISTOL},
+	{{"hegrenade", "he"},				"weapon_hegrenade",		"HE Grenade",		300, 44, GEAR_SLOT_GRENADES, 1},
+	{{"molotov"},						"weapon_molotov",		"Molotov",			400, 46, GEAR_SLOT_GRENADES, 1},
+	{{"kevlar"},						"item_kevlar",			"Kevlar Vest",		650, 50, GEAR_SLOT_UTILITY},
 };
 
-void ParseWeaponCommand(CCSPlayerController *pController, const char *pszWeaponName)
+// CONVAR_TODO
+bool g_bEnableWeapons = false;
+
+CON_COMMAND_F(cs2f_weapons_enable, "Whether to enable weapon commands", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY)
 {
-	if (!pController || !pController->m_hPawn())
+	if (args.ArgC() < 2)
+		Msg("%s %i\n", args[0], g_bEnableWeapons);
+	else
+		g_bEnableWeapons = V_StringToBool(args[1], false);
+}
+
+void ParseWeaponCommand(const CCommand& args, CCSPlayerController* player)
+{
+	if (!g_bEnableWeapons || !player || !player->m_hPawn())
 		return;
 
-	CCSPlayerPawn* pPawn = (CCSPlayerPawn*)pController->GetPawn();
+	CCSPlayerPawn* pPawn = (CCSPlayerPawn*)player->GetPawn();
+	WeaponMapEntry_t weaponEntry;
+	bool foundWeapon = false;
 
+	for (int i = 0; i < sizeof(WeaponMap) / sizeof(*WeaponMap); i++)
+	{
+		if (foundWeapon)
+			break;
+
+		weaponEntry = WeaponMap[i];
+		const char* command = args[0];
+
+		if (!V_strncmp("c_", command, 2))
+			command = command + 2;
+
+		for (std::string alias : weaponEntry.aliases)
+		{
+			if (!V_stricmp(command, alias.c_str()))
+			{
+				foundWeapon = true;
+				break;
+			}
+		}
+	}
+
+	if (!foundWeapon)
+		return;
+
+	if (pPawn->m_iHealth() <= 0 || pPawn->m_iTeamNum != CS_TEAM_CT)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You can only buy weapons when human.");
+		return;
+	}
+
+	CCSPlayer_ItemServices* pItemServices = pPawn->m_pItemServices;
+	int money = player->m_pInGameMoneyServices->m_iAccount;
+
+	if (money < weaponEntry.iPrice)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You can't afford %s! It costs $%i, you only have $%i", weaponEntry.szWeaponName, weaponEntry.iPrice, money);
+		return;
+	}
+
+	if (weaponEntry.maxAmount)
+	{
+		CUtlVector<WeaponPurchaseCount_t>* weaponPurchases = pPawn->m_pActionTrackingServices->m_weaponPurchasesThisRound().m_weaponPurchases;
+		bool found = false;
+		FOR_EACH_VEC(*weaponPurchases, i)
+		{
+			WeaponPurchaseCount_t& purchase = (*weaponPurchases)[i];
+			if (purchase.m_nItemDefIndex == weaponEntry.iItemDefIndex)
+			{
+				if (purchase.m_nCount >= weaponEntry.maxAmount)
+				{
+					ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You cannot buy any more %s (Max %i)", weaponEntry.szWeaponName, weaponEntry.maxAmount);
+					return;
+				}
+				purchase.m_nCount += 1;
+				found = true;
+				break;
+			}
+		}
+
+		if (!found)
+		{
+			WeaponPurchaseCount_t purchase = {};
+
+			purchase.m_nCount = 1;
+			purchase.m_nItemDefIndex = weaponEntry.iItemDefIndex;
+
+			weaponPurchases->AddToTail(purchase);
+		}
+	}
+
+	CUtlVector<CHandle<CBasePlayerWeapon>>* weapons = pPawn->m_pWeaponServices->m_hMyWeapons();
+
+	FOR_EACH_VEC(*weapons, i)
+	{
+		CHandle<CBasePlayerWeapon>& weaponHandle = (*weapons)[i];
+
+		if (!weaponHandle.IsValid())
+			continue;
+
+		CBasePlayerWeapon* weapon = weaponHandle.Get();
+
+		// This should usually not be possible
+		// However, Lua ZR is stripping weapons in a really dirty way that leaves stray null entries in m_hMyWeapons
+		if (!weapon)
+			continue;
+
+		if (weapon->GetWeaponVData()->m_GearSlot() == weaponEntry.iGearSlot && (weaponEntry.iGearSlot == GEAR_SLOT_RIFLE || weaponEntry.iGearSlot == GEAR_SLOT_PISTOL))
+		{
+			// Despite having to pass a weapon into DropPlayerWeapon, it only drops the weapon if it's also the players active weapon
+			pPawn->m_pWeaponServices->m_hActiveWeapon = weaponHandle;
+			pItemServices->DropPlayerWeapon(weapon);
+
+			break;
+		}
+	}
+
+	player->m_pInGameMoneyServices->m_iAccount = money - weaponEntry.iPrice;
+	pItemServices->GiveNamedItem(weaponEntry.szClassName);
+	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX"You have purchased %s for $%i", weaponEntry.szWeaponName, weaponEntry.iPrice);
+}
+
+void WeaponCommandCallback(const CCommandContext& context, const CCommand& args)
+{
+	CCSPlayerController* pController = nullptr;
+	if (context.GetPlayerSlot().Get() != -1)
+		pController = (CCSPlayerController*)g_pEntitySystem->GetBaseEntity((CEntityIndex)(context.GetPlayerSlot().Get() + 1));
+
+	// Only allow connected players to run chat commands
+	if (pController && !pController->IsConnected())
+		return;
+
+	ParseWeaponCommand(args, pController);
+}
+
+void RegisterWeaponCommands()
+{
 	for (int i = 0; i < sizeof(WeaponMap) / sizeof(*WeaponMap); i++)
 	{
 		WeaponMapEntry_t weaponEntry = WeaponMap[i];
 
-		if (!V_stricmp(pszWeaponName, weaponEntry.command))
+		for (std::string alias : weaponEntry.aliases)
 		{
-			if (pController->m_hPawn()->m_iHealth() <= 0) {
-				ClientPrint(pController, HUD_PRINTTALK, CHAT_PREFIX"You can only buy weapons when alive.");
-				return;
-			}
-			CCSPlayer_ItemServices *pItemServices = pPawn->m_pItemServices;
-			int money = pController->m_pInGameMoneyServices->m_iAccount;
-			if (money >= weaponEntry.iPrice)
-			{
-				if (weaponEntry.maxAmount)
-				{
-					CUtlVector<WeaponPurchaseCount_t>* weaponPurchases = pPawn->m_pActionTrackingServices->m_weaponPurchasesThisRound().m_weaponPurchases;
-					bool found = false;
-					FOR_EACH_VEC(*weaponPurchases, i)
-					{
-						WeaponPurchaseCount_t& purchase = (*weaponPurchases)[i];
-						if (purchase.m_nItemDefIndex == weaponEntry.iItemDefIndex)
-						{
-							if (purchase.m_nCount >= weaponEntry.maxAmount)
-							{
-								ClientPrint(pController, HUD_PRINTTALK, CHAT_PREFIX"You cannot use !%s anymore(Max %i)", weaponEntry.command, weaponEntry.maxAmount);
-								return;
-							}
-							purchase.m_nCount += 1;
-							found = true;
-							break;
-						}
-					}
+			new CChatCommand(alias.c_str(), ParseWeaponCommand, ADMFLAG_NONE);
+			ConCommandRefAbstract ref;
 
-					if (!found)
-					{
-						WeaponPurchaseCount_t purchase = {};
+			char cmdName[64];
+			V_snprintf(cmdName, sizeof(cmdName), "%s%s", COMMAND_PREFIX, alias.c_str());
 
-						purchase.m_nCount = 1;
-						purchase.m_nItemDefIndex = weaponEntry.iItemDefIndex;
-
-						weaponPurchases->AddToTail(purchase);
-					}
-				}
-
-				pController->m_pInGameMoneyServices->m_iAccount = money - weaponEntry.iPrice;
-				pItemServices->GiveNamedItem(weaponEntry.szWeaponName);
-			}
-
-			break;
+			ConCommand command(&ref, cmdName, WeaponCommandCallback, "Buys this weapon", FCVAR_CLIENT_CAN_EXECUTE | FCVAR_LINKED_CONCOMMAND);
 		}
 	}
 }
@@ -146,17 +244,13 @@ void ParseChatCommand(const char *pMessage, CCSPlayerController *pController)
 		return;
 
 	CCommand args;
-	args.Tokenize(pMessage + 1);
+	args.Tokenize(pMessage);
 
 	uint16 index = g_CommandList.Find(hash_32_fnv1a_const(args[0]));
 
 	if (g_CommandList.IsValidIndex(index))
 	{
 		(*g_CommandList[index])(args, pController);
-	}
-	else
-	{
-		ParseWeaponCommand(pController, args[0]);
 	}
 }
 
@@ -208,10 +302,27 @@ void ClientPrint(CBasePlayerController *player, int hud_dest, const char *msg, .
 		ConMsg("%s\n", buf);
 }
 
+// CONVAR_TODO
+bool g_bEnableStopSound = false;
+
+CON_COMMAND_F(cs2f_stopsound_enable, "Whether to enable stopsound", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY)
+{
+	if (args.ArgC() < 2)
+		Msg("%s %i\n", args[0], g_bEnableStopSound);
+	else
+		g_bEnableStopSound = V_StringToBool(args[1], false);
+}
+
 CON_COMMAND_CHAT(stopsound, "toggle weapon sounds")
 {
-	if (!player)
+	if (!g_bEnableStopSound)
 		return;
+
+	if (!player)
+	{
+		ClientPrint(player, HUD_PRINTCONSOLE, CHAT_PREFIX "You cannot use this command from the server console.");
+		return;
+	}
 
 	int iPlayer = player->GetPlayerSlot();
 	bool bStopSet = g_playerManager->IsPlayerUsingStopSound(iPlayer);
@@ -226,7 +337,10 @@ CON_COMMAND_CHAT(stopsound, "toggle weapon sounds")
 CON_COMMAND_CHAT(toggledecals, "toggle world decals, if you're into having 10 fps in ZE")
 {
 	if (!player)
+	{
+		ClientPrint(player, HUD_PRINTCONSOLE, CHAT_PREFIX "You cannot use this command from the server console.");
 		return;
+	}
 
 	int iPlayer = player->GetPlayerSlot();
 	bool bSet = !g_playerManager->IsPlayerUsingStopDecals(iPlayer);
@@ -236,24 +350,49 @@ CON_COMMAND_CHAT(toggledecals, "toggle world decals, if you're into having 10 fp
 	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You have %s world decals.", bSet ? "disabled" : "enabled");
 }
 
-CON_COMMAND_CHAT(myuid, "test")
-{
-	if (!player)
-		return;
-
-	int iPlayer = player->GetPlayerSlot();
-
-	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Your userid is %i, slot: %i, retrieved slot: %i", g_pEngineServer2->GetPlayerUserId(iPlayer).Get(), iPlayer, g_playerManager->GetSlotFromUserId(g_pEngineServer2->GetPlayerUserId(iPlayer).Get()));
-}
-
 // CONVAR_TODO
-static constexpr float g_flMaxZteleDistance = 150.0f;
+static bool g_bEnableZtele = false;
+static float g_flMaxZteleDistance = 150.0f;
+static bool g_bZteleHuman = false;
+
+CON_COMMAND_F(zr_ztele_enable, "Whether to enable ztele", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY)
+{
+	if (args.ArgC() < 2)
+		Msg("%s %i\n", args[0], g_bEnableZtele);
+	else
+		g_bEnableZtele = V_StringToBool(args[1], false);
+}
+CON_COMMAND_F(zr_ztele_max_distance, "Maximum distance players are allowed to move after starting ztele", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY)
+{
+	if (args.ArgC() < 2)
+		Msg("%s %f\n", args[0], g_flMaxZteleDistance);
+	else
+		g_flMaxZteleDistance = V_StringToFloat32(args[1], 150.0f);
+}
+CON_COMMAND_F(zr_ztele_allow_humans, "Whether to allow humans to use ztele", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY)
+{
+	if (args.ArgC() < 2)
+		Msg("%s %i\n", args[0], g_bZteleHuman);
+	else
+		g_bZteleHuman = V_StringToBool(args[1], false);
+}
 
 CON_COMMAND_CHAT(ztele, "teleport to spawn")
 {
+	// Silently return so the command is completely hidden
+	if (!g_bEnableZtele)
+		return;
+
 	if (!player)
 	{
 		ClientPrint(player, HUD_PRINTCONSOLE, CHAT_PREFIX "You cannot use this command from the server console.");
+		return;
+	}
+
+	// Check if command is enabled for humans
+	if (!g_bZteleHuman && player->m_iTeamNum() == CS_TEAM_CT)
+	{
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "You cannot use this command as a human.");
 		return;
 	}
 
@@ -323,23 +462,50 @@ CON_COMMAND_CHAT(ztele, "teleport to spawn")
 }
 
 // CONVAR_TODO
-static constexpr int g_iMaxHideDistance = 2000;
+bool g_bEnableHide = false;
+static int g_iDefaultHideDistance = 250;
+static int g_iMaxHideDistance = 2000;
 
-CON_COMMAND_CHAT(hide, "hides nearby teammates")
+CON_COMMAND_F(cs2f_hide_enable, "Whether to enable hide", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY)
 {
+	if (args.ArgC() < 2)
+		Msg("%s %i\n", args[0], g_bEnableHide);
+	else
+		g_bEnableHide = V_StringToBool(args[1], false);
+}
+CON_COMMAND_F(cs2f_hide_distance_default, "The default distance for hide", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY)
+{
+	if (args.ArgC() < 2)
+		Msg("%s %i\n", args[0], g_iDefaultHideDistance);
+	else
+		g_iDefaultHideDistance = V_StringToInt32(args[1], 250);
+}
+CON_COMMAND_F(cs2f_hide_distance_max, "The max distance for hide", FCVAR_LINKED_CONCOMMAND | FCVAR_SPONLY)
+{
+	if (args.ArgC() < 2)
+		Msg("%s %i\n", args[0], g_iMaxHideDistance);
+	else
+		g_iMaxHideDistance = V_StringToInt32(args[1], 2000);
+}
+
+CON_COMMAND_CHAT(hide, "hides nearby players")
+{
+	// Silently return so the command is completely hidden
+	if (!g_bEnableHide)
+		return;
+
 	if (!player)
 	{
 		ClientPrint(player, HUD_PRINTCONSOLE, CHAT_PREFIX "You cannot use this command from the server console.");
 		return;
 	}
 
-	if (args.ArgC() < 2)
-	{
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !hide <distance> (0 to disable)");
-		return;
-	}
+	int distance;
 
-	int distance = V_StringToInt32(args[1], -1);
+	if (args.ArgC() < 2)
+		distance = g_iDefaultHideDistance;
+	else
+		distance = V_StringToInt32(args[1], -1);
 
 	if (distance > g_iMaxHideDistance || distance < 0)
 	{
@@ -358,20 +524,30 @@ CON_COMMAND_CHAT(hide, "hides nearby teammates")
 		return;
 	}
 
-	// allows for toggling hide with a bind by turning off when hide distance matches.
+	// allows for toggling hide by turning off when hide distance matches.
 	if (pZEPlayer->GetHideDistance() == distance)
 		distance = 0;
 
 	pZEPlayer->SetHideDistance(distance);
 
 	if (distance == 0)
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Hiding teammates is now disabled.");
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Hiding players is now disabled.");
 	else
-		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Now hiding teammates within %i units.", distance);
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Now hiding players within %i units.", distance);
 }
 
 
 #if _DEBUG
+CON_COMMAND_CHAT(myuid, "test")
+{
+	if (!player)
+		return;
+
+	int iPlayer = player->GetPlayerSlot();
+
+	ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Your userid is %i, slot: %i, retrieved slot: %i", g_pEngineServer2->GetPlayerUserId(iPlayer).Get(), iPlayer, g_playerManager->GetSlotFromUserId(g_pEngineServer2->GetPlayerUserId(iPlayer).Get()));
+}
+
 CON_COMMAND_CHAT(message, "message someone")
 {
 	if (!player)
@@ -388,12 +564,7 @@ CON_COMMAND_CHAT(message, "message someone")
 	// skipping the id and space, it's dumb but w/e
 	const char *pMessage = args.ArgS() + V_strlen(args[1]) + 1;
 
-	char buf[256];
-	V_snprintf(buf, sizeof(buf), CHAT_PREFIX"Private message from %s to %s: \5%s", player->GetPlayerName(), pTarget->GetPlayerName(), pMessage);
-
-	CSingleRecipientFilter filter(uid);
-
-	UTIL_SayTextFilter(filter, buf, nullptr, 0);
+	ClientPrint(pTarget, HUD_PRINTTALK, CHAT_PREFIX "Private message from %s to %s: \5%s", player->GetPlayerName(), pTarget->GetPlayerName(), pMessage);
 }
 
 CON_COMMAND_CHAT(say, "say something using console")
@@ -579,7 +750,16 @@ CON_COMMAND_CHAT(setinteraction, "set a player's interaction flags")
 
 void HttpCallback(HTTPRequestHandle request, char* response)
 {
-	ClientPrintAll(HUD_PRINTTALK, response);
+	// Test serializing to JSON
+	json data = json::parse(response, nullptr, false);
+
+	if (data.is_discarded())
+	{
+		Message("Failed parsing JSON!\n");
+		return;
+	}
+
+	ClientPrintAll(HUD_PRINTTALK, data.dump().c_str());
 }
 
 CON_COMMAND_CHAT(http, "test an HTTP request")
@@ -589,7 +769,7 @@ CON_COMMAND_CHAT(http, "test an HTTP request")
 		if (player)
 			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Steam HTTP interface is not available!");
 		else
-			Message(CHAT_PREFIX "Steam HTTP interface is not available!\n");
+			Message("Steam HTTP interface is not available!\n");
 
 		return;
 	}
@@ -598,7 +778,7 @@ CON_COMMAND_CHAT(http, "test an HTTP request")
 		if (player)
 			ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !http <get/post> <url> [content]");
 		else
-			Message(CHAT_PREFIX "Usage: !http <get/post> <url> [content]\n");
+			Message("Usage: !http <get/post> <url> [content]\n");
 
 		return;
 	}
@@ -608,29 +788,15 @@ CON_COMMAND_CHAT(http, "test an HTTP request")
 	else if (strcmp(args[1], "post") == 0)
 		g_HTTPManager.POST(args[2], args[3], &HttpCallback);
 }
-#endif // _DEBUG
 
-// Lookup a weapon classname in the weapon map and "initialize" it.
-// Both m_bInitialized and m_iItemDefinitionIndex need to be set for a weapon to be pickable and not crash clients,
-// and m_iItemDefinitionIndex needs to be the correct ID from weapons.vdata so the gun behaves as it should.
-void FixWeapon(CCSWeaponBase *pWeapon)
+CON_COMMAND_CHAT(discordbot, "send a message to a discord webhook")
 {
-	// Weapon could be already initialized with the correct data from GiveNamedItem, in that case we don't need to do anything
-	if (!pWeapon || pWeapon->m_AttributeManager().m_Item().m_bInitialized())
-		return;
-
-	const char *pszClassName = pWeapon->m_pEntity->m_designerName.String();
-
-	for (int i = 0; i < sizeof(WeaponMap) / sizeof(*WeaponMap); i++)
+	if (args.ArgC() < 3)
 	{
-		if (!V_stricmp(WeaponMap[i].szWeaponName, pszClassName))
-		{
-			DevMsg("Fixing a %s with index = %d and initialized = %d\n", pszClassName,
-				pWeapon->m_AttributeManager().m_Item().m_iItemDefinitionIndex(),
-				pWeapon->m_AttributeManager().m_Item().m_bInitialized());
-
-			pWeapon->m_AttributeManager().m_Item().m_bInitialized = true;
-			pWeapon->m_AttributeManager().m_Item().m_iItemDefinitionIndex = WeaponMap[i].iItemDefIndex;
-		}
+		ClientPrint(player, HUD_PRINTTALK, CHAT_PREFIX "Usage: !discord <bot> <message>");
+		return;
 	}
+
+	g_pDiscordBotManager->PostDiscordMessage(args[1], args[2]);
 }
+#endif // _DEBUG

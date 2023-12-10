@@ -49,8 +49,14 @@ public:
 		m_iHideDistance = 0;
 		m_bConnected = false;
 		m_iTotalDamage = 0;
+		m_iTotalHits = 0;
+		m_iTotalKills = 0;
 		m_bVotedRTV = false;
 		m_bVotedExtend = false;
+		m_flRTVVoteTime = 0;
+		m_flExtendVoteTime = 0;
+		m_iFloodTokens = 0;
+		m_flLastTalkTime = 0;
 	}
 
 	bool IsFakeClient() { return m_bFakeClient; }
@@ -59,10 +65,12 @@ public:
 	uint64 GetSteamId64() { return m_SteamID->ConvertToUint64(); }
 	const CSteamID* GetSteamId() { return m_SteamID; }
 	bool IsAdminFlagSet(uint64 iFlag);
+	bool IsFlooding();
 	
 	void SetAuthenticated() { m_bAuthenticated = true; }
 	void SetConnected() { m_bConnected = true; }
 	void SetSteamId(const CSteamID* steamID) { m_SteamID = steamID; }
+	uint64 GetAdminFlags() { return m_iAdminFlags; }
 	void SetAdminFlags(uint64 iAdminFlags) { m_iAdminFlags = iAdminFlags; }
 	void SetPlayerSlot(CPlayerSlot slot) { m_slot = slot; }
 	void SetMuted(bool muted) { m_bMuted = muted; }
@@ -71,8 +79,12 @@ public:
 	void ClearTransmit() { m_shouldTransmit.ClearAll(); }
 	void SetHideDistance(int distance) { m_iHideDistance = distance; }
 	void SetTotalDamage(int damage) { m_iTotalDamage = damage; }
+	void SetTotalHits(int hits) { m_iTotalHits = hits; }
+	void SetTotalKills(int kills) { m_iTotalKills = kills; }
 	void SetRTVVote(bool bRTVVote) { m_bVotedRTV = bRTVVote; }
+	void SetRTVVoteTime(float flCurtime) { m_flRTVVoteTime = flCurtime; }
 	void SetExtendVote(bool bExtendVote) { m_bVotedExtend = bExtendVote; }
+	void SetExtendVoteTime(float flCurtime) { m_flExtendVoteTime = flCurtime; }
 
 	bool IsMuted() { return m_bMuted; }
 	bool IsGagged() { return m_bGagged; }
@@ -80,8 +92,12 @@ public:
 	int GetHideDistance() { return m_iHideDistance; }
 	CPlayerSlot GetPlayerSlot() { return m_slot; }
 	int GetTotalDamage() { return m_iTotalDamage; }
+	int GetTotalHits() { return m_iTotalHits; }
+	int GetTotalKills() { return m_iTotalKills; }
 	bool GetRTVVote() { return m_bVotedRTV; }
+	float GetRTVVoteTime() { return m_flRTVVoteTime; }
 	bool GetExtendVote() { return m_bVotedExtend; }
+	float GetExtendVoteTime() { return m_flExtendVoteTime; }
 	
 	void OnAuthenticated();
 	void CheckAdmin();
@@ -99,8 +115,14 @@ private:
 	int m_iHideDistance;
 	CBitVec<MAXPLAYERS> m_shouldTransmit;
 	int m_iTotalDamage;
+	int m_iTotalHits;
+	int m_iTotalKills;
 	bool m_bVotedRTV;
+	float m_flRTVVoteTime;
 	bool m_bVotedExtend;
+	float m_flExtendVoteTime;
+	int m_iFloodTokens;
+	float m_flLastTalkTime;
 };
 
 class CPlayerManager
@@ -126,6 +148,7 @@ public:
 	void CheckHideDistances();
 	CPlayerSlot GetSlotFromUserId(uint16 userid);
 	ZEPlayer *GetPlayerFromUserId(uint16 userid);
+	ZEPlayer *GetPlayerFromSteamId(uint64 steamid);
 	ETargetType TargetPlayerString(int iCommandClient, const char* target, int &iNumClients, int *clients);
 
 	ZEPlayer *GetPlayer(CPlayerSlot slot);
